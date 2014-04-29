@@ -10,6 +10,7 @@ require 'yaml'
 require 'csv'
 
 class Cluster
+  attr_reader :client
 
   def initialize nimbus_ip
     error_wrapper do
