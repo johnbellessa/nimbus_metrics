@@ -10,6 +10,7 @@ require 'yaml'
 require 'csv'
 
 class Cluster
+
   def initialize nimbus_ip
     error_wrapper do
       socket = Thrift::Socket.new(nimbus_ip, 6627)
@@ -54,6 +55,10 @@ class Topology
     @executors = @cluster.get_executors @id
   end
 
+  def uptime_secs
+    @cluster.client.getTopologyInfo(@id).uptime_secs
+  end
+
   def categorize_executors
     @bolts = {}
     @spouts = {}
@@ -82,9 +87,14 @@ class Topology
     @bolts.each do |component, executors|
       #puts component
       highest_cap = 0
+      window = 0
       executors.each do |summary|
         executed = summary.stats.specific.bolt.executed['600'].values[0]
-        window = 600
+        if self.uptime_secs > 600
+          window = 600 
+        else
+          window = self.uptime_secs
+        end
         latency = summary.stats.specific.bolt.execute_ms_avg['600'].values[0]
         unless executed.nil? or latency.nil?
           capacity = (executed * latency) / (1000 * window)
@@ -268,7 +278,6 @@ cluster = Cluster.new('172.22.138.204')
 puts ARGV[0]
 topology = Topology.new(cluster, ARGV[0])
 
-
-topology.run(20) do
+topology.run(5) do
   topology.emit_and_capacity_metric
 end
