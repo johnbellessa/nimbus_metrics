@@ -8,17 +8,49 @@ require 'json'
 require 'pp'
 require 'yaml'
 require 'csv'
+require 'set'
 
 class Cluster
   attr_reader :client
+  attr_reader :topologies
+  attr_reader :new_topologies
 
   def initialize nimbus_ip
+    @topology_ids = Set.new
+    @topologies = []
     error_wrapper do
       socket = Thrift::Socket.new(nimbus_ip, 6627)
       @transport = Thrift::FramedTransport.new(socket)
       protocol = Thrift::BinaryProtocol.new(@transport)
       @client = Nimbus::Client.new(protocol)
       @transport.open
+      #PP.pp @client.getClusterInfo.topologies[0].methods
+    end
+  end
+
+  def load_topologies
+    puts "Loading Topologies"
+    all_topologies = Set.new
+    topologies = @client.getClusterInfo.topologies
+    topologies.each do |top|
+      all_topologies.add(top.id)
+    end
+    new_tops = all_topologies - @topology_ids
+    @new_topologies = []
+    new_tops.each do | new_top |
+      topology = Topology.new(self, new_top)
+      @topologies << topology
+      @new_topologies << topology
+      @topology_ids << new_top
+    end
+    puts "New Topology(ies) found" unless @new_topologies.empty?
+  end
+
+  def new_topologies?
+    if @new_topologies.empty?
+      false
+    else
+      true
     end
   end
 
@@ -280,11 +312,46 @@ class Topology
   end
 end
 
+class Metrics
+  def initialize(cluster, query_time, run_time)
+    @cluster = cluster
+    @query_time = query_time
+    @run_time = run_time
+    @threads = []
+  end
+
+  def run
+    while true do
+      @cluster.load_topologies
+      if @cluster.new_topologies?
+        puts "Loading threads for new topologies"
+        load_threads
+      end
+      sleep(10)
+    end
+  end
+
+  def load_threads
+    @cluster.new_topologies.each do |top|
+      t = Thread.new {
+        top.run(@query_time) do
+          counter = 0
+          top.emit_and_capacity_metric
+          counter += 1
+          # added 1 since the first round doesn't output to the emit csv
+          if counter == ((60 * @run_time) / @query_time) + 1
+            Thread.exit
+          end
+        end
+      }
+      @threads << t
+    end
+  end
+
+end
 
 cluster = Cluster.new('172.22.138.204')
-puts ARGV[0]
-topology = Topology.new(cluster, ARGV[0])
-
-topology.run(5) do
-  topology.emit_and_capacity_metric
-end
+query_time =  ARGV[0].to_i
+run_time = ARGV[1].to_i
+metrics = Metrics.new(cluster, query_time, run_time)
+metrics.run
