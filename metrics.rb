@@ -9,6 +9,7 @@ require 'pp'
 require 'yaml'
 require 'csv'
 require 'set'
+require 'yaml'
 
 class Cluster
   attr_reader :client
@@ -350,7 +351,9 @@ class Metrics
 
 end
 
-cluster = Cluster.new('172.22.138.204')
+storm_yaml = YAML.load_file(ENV['HOME'] + '/.storm/storm.yaml')
+nimbus_host_ip =  storm_yaml['nimbus.host']
+cluster = Cluster.new(nimbus_host_ip)
 query_time =  ARGV[0].to_i
 run_time = ARGV[1].to_i
 metrics = Metrics.new(cluster, query_time, run_time)
