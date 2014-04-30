@@ -34,7 +34,8 @@ class Cluster
     all_topologies = Set.new
     topologies = @client.getClusterInfo.topologies
     topologies.each do |top|
-      all_topologies.add(top.id)
+      # add the topology unless it begins with an underscore
+      all_topologies.add(top.id) unless top.name[0].include? '_'
     end
     new_tops = all_topologies - @topology_ids
     @new_topologies = []
