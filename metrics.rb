@@ -31,16 +31,18 @@ class Cluster
 
   def load_topologies
     puts "Loading Topologies"
-    all_topologies = Set.new
+    all_topology_ids = Set.new
+    all_topology_names = {} 
     topologies = @client.getClusterInfo.topologies
     topologies.each do |top|
       # add the topology unless it begins with an underscore
-      all_topologies.add(top.id) unless top.name[0].include? '_'
+      all_topology_ids.add(top.id) unless top.name[0].include? '_'
+      all_topology_names[top.id] = top.name unless top.name[0].include? '_'
     end
-    new_tops = all_topologies - @topology_ids
+    new_tops = all_topology_ids - @topology_ids
     @new_topologies = []
     new_tops.each do | new_top |
-      topology = Topology.new(self, new_top)
+      topology = Topology.new(self, new_top, all_topology_names[new_top])
       @topologies << topology
       @new_topologies << topology
       @topology_ids << new_top
@@ -79,9 +81,11 @@ class Cluster
 end
 
 class Topology
-  def initialize cluster, topology_id
-    @cluster = cluster
+  attr_reader :name
+  def initialize(cluster, topology_id, name)
+    @cluster = Cluster.new($nimbus_host_ip)
     @id = topology_id
+    @name = name 
   end
 
   def load_executors
@@ -256,8 +260,8 @@ class Topology
     }.to_yaml
 
     if @csv.nil?
-      @csv = CSV.open("./results/#{@id}_capacity.csv", "wb")
-      @keys = @bolt_capacity.keys.sort_by { |key| key }
+      @csv = CSV.open("./results/#{@name}__capacity.csv", "wb")
+      @keys = @bolt_capacity.keys.sort_by{ |key| key }
       @csv << @keys
     else
       output = []
@@ -269,7 +273,7 @@ class Topology
 
     unless @rates.nil?
       if @emit_csv.nil?
-        @emit_csv = CSV.open("./results/#{@id}_emit_rate.csv", "wb")
+        @emit_csv = CSV.open("./results/#{@name}__emit_rate.csv", "wb")
         @keys_emit = @rates.keys
         @emit_csv << @keys_emit
       else
@@ -282,7 +286,6 @@ class Topology
     end
     puts yaml_out unless @rates.nil?
   end
-
 
   def ack_rate_metric
     if @total_acked.nil?
@@ -353,8 +356,8 @@ class Metrics
 end
 
 storm_yaml = YAML.load_file(ENV['HOME'] + '/.storm/storm.yaml')
-nimbus_host_ip =  storm_yaml['nimbus.host']
-cluster = Cluster.new(nimbus_host_ip)
+$nimbus_host_ip =  storm_yaml['nimbus.host']
+cluster = Cluster.new($nimbus_host_ip)
 query_time =  ARGV[0].to_i
 run_time = ARGV[1].to_i
 metrics = Metrics.new(cluster, query_time, run_time)
