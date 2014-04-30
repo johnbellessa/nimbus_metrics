@@ -64,17 +64,23 @@ class Topology
     @bolts = {}
     @spouts = {}
     @executors.each do |e|
-      if e.stats.specific.bolt?
-        if @bolts[e.component_id].nil?
-          @bolts[e.component_id] = [e]
-        else
-          @bolts[e.component_id] << e
-        end
-      elsif e.stats.specific.spout?
-        if @spouts[e.component_id].nil?
-          @spouts[e.component_id] = [e]
-        else
-          @spouts[e.component_id] << e
+      #PP.pp e.methods
+      #PP.pp "Port: #{e.executor_info.task_end}"
+      if e.stats
+        if e.stats.specific != nil
+          if e.stats.specific.bolt?
+            if @bolts[e.component_id].nil?
+              @bolts[e.component_id] = [e]
+            else
+              @bolts[e.component_id] << e
+            end
+          elsif e.stats.specific.spout?
+            if @spouts[e.component_id].nil?
+              @spouts[e.component_id] = [e]
+            else
+              @spouts[e.component_id] << e
+            end
+          end
         end
       end
     end
@@ -217,11 +223,11 @@ class Topology
 
     if @csv.nil?
       @csv = CSV.open("./results/#{@id}_capacity.csv", "wb")
-      @keys = @bolt_capacity.keys
+      @keys = @bolt_capacity.keys.sort_by { |key| key }
       @csv << @keys
     else
       output = []
-      @keys.each do |key|
+      (@keys.sort_by{ |key| key}).each do |key|
         output << @bolt_capacity[key]
       end
       @csv << output
