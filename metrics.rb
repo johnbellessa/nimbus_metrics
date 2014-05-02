@@ -30,7 +30,7 @@ class Cluster
   end
 
   def load_topologies
-    puts "Loading Topologies"
+    puts "Search for Topologies"
     all_topology_ids = Set.new
     all_topology_names = {} 
     topologies = @client.getClusterInfo.topologies
@@ -339,14 +339,16 @@ class Metrics
   def load_threads
     @cluster.new_topologies.each do |top|
       t = Thread.new {
+        counter = 0
         top.run(@query_time) do
-          counter = 0
           top.emit_and_capacity_metric
-          counter += 1
           # added 1 since the first round doesn't output to the emit csv
-          if counter == ((60 * @run_time) / @query_time) + 1
+          puts "counter: #{counter}"
+          if counter >= ((60 * @run_time) / @query_time) + 1 
+            puts "Thread for #{@name} exiting"
             Thread.exit
           end
+          counter += 1
         end
       }
       @threads << t
@@ -359,6 +361,6 @@ storm_yaml = YAML.load_file(ENV['HOME'] + '/.storm/storm.yaml')
 $nimbus_host_ip =  storm_yaml['nimbus.host']
 cluster = Cluster.new($nimbus_host_ip)
 query_time =  ARGV[0].to_i
-run_time = ARGV[1].to_i
+run_time = ARGV[1].to_f
 metrics = Metrics.new(cluster, query_time, run_time)
 metrics.run
