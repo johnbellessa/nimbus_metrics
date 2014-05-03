@@ -86,6 +86,16 @@ class Topology
     @cluster = Cluster.new($nimbus_host_ip)
     @id = topology_id
     @name = name 
+    @csv_files = {
+      'capacity' =>  {}, 
+      'emit_rate' => {}, 
+    }
+    mkdir_output = `mkdir -p #{$output_dir}/#{@name}/results`
+    puts mkdir_output if mkdir_output.length > 0
+    @csv_files.each do |metric, dict|
+      filename = "#{$output_dir}/#{@name}/results/#{@name}__#{metric}.csv"
+      dict['filename'] = filename
+    end
   end
 
   def load_executors
@@ -157,16 +167,24 @@ class Topology
     begin
       while true
         yield
-        @csv.flush unless @csv.nil?
+        @csv_files.each do |metric, file_info| 
+          file_info['file'].flush unless file_info['file'].nil?
+        end
+        #@csv.flush unless @csv.nil?
         @emit_csv.flush unless @emit_csv.nil?
         sleep(query_time)
       end
     rescue SystemExit, Interrupt
-      @cluster.close
-      @csv.close() unless @csv.nil?
-      @emit_csv.close() unless @emit_csv.nil?
-      puts
+      close_top
     end
+  end
+
+  def close_top 
+    @cluster.close
+    @csv_files.each do |metric, file_info| 
+        puts "Closing file for: #{@name} - #{metric}"
+        file_info['file'].close() unless file_info['file'].nil?
+      end
   end
 
   def capacity_metric
@@ -243,7 +261,6 @@ class Topology
       # get rate
       compute_rate(old_time)
 
-      PP.pp @rates
     end
   end
 
@@ -252,39 +269,29 @@ class Topology
     emit_rate_metric
     categorize_executors
     calculate_capacity
-    #PP.pp @bolt_capacity
-    #puts '=================================='
-    yaml_out = {
-        'capacity' => @bolt_capacity,
-        'emit_rate' => @rates
-    }.to_yaml
 
-    if @csv.nil?
-      @csv = CSV.open("./results/#{@name}__capacity.csv", "wb")
-      @keys = @bolt_capacity.keys.sort_by{ |key| key }
-      @csv << @keys
+    # capacity to csv
+    csv_wrapper('capacity', @bolt_capacity.keys.sort_by{ |key| key }, @bolt_capacity)
+
+    # emit rate to csv
+    unless @rates.nil?
+      csv_wrapper('emit_rate', @rates.keys, @rates)
+    end
+  end
+
+  def csv_wrapper(metric, keys, values)
+    if @csv_files[metric]['file'].nil?
+      puts "Creating CSV file: #{@csv_files[metric]['filename']}"
+      @csv_files[metric]['file'] = CSV.open(@csv_files[metric]['filename'], "wb")
+      @csv_files[metric]['file'] << keys
     else
       output = []
-      (@keys.sort_by{ |key| key}).each do |key|
-        output << @bolt_capacity[key]
+      keys.each do |key|
+        output << values[key]
       end
-      @csv << output
+      @csv_files[metric]['file'] << output
+      @csv_files[metric]['file'].flush
     end
-
-    unless @rates.nil?
-      if @emit_csv.nil?
-        @emit_csv = CSV.open("./results/#{@name}__emit_rate.csv", "wb")
-        @keys_emit = @rates.keys
-        @emit_csv << @keys_emit
-      else
-        output = []
-        @keys_emit.each do |key|
-          output << @rates[key]
-        end
-        @emit_csv << output
-      end
-    end
-    puts yaml_out unless @rates.nil?
   end
 
   def ack_rate_metric
@@ -326,13 +333,19 @@ class Metrics
   end
 
   def run
-    while true do
-      @cluster.load_topologies
-      if @cluster.new_topologies?
-        puts "Loading threads for new topologies"
-        load_threads
+    begin
+      while true do
+        @cluster.load_topologies
+        if @cluster.new_topologies?
+          puts "Loading threads for new topologies"
+          load_threads
+        end
+        sleep(10)
       end
-      sleep(10)
+    rescue SystemExit, Interrupt
+      @threads.each do |thread| 
+        thread.exit
+      end
     end
   end
 
@@ -341,14 +354,18 @@ class Metrics
       t = Thread.new {
         counter = 0
         top.run(@query_time) do
-          top.emit_and_capacity_metric
-          # added 1 since the first round doesn't output to the emit csv
-          puts "counter: #{counter}"
-          if counter >= ((60 * @run_time) / @query_time) + 1 
-            puts "Thread for #{@name} exiting"
-            Thread.exit
+          begin
+            top.emit_and_capacity_metric
+            # added 1 since the first round doesn't output to the emit csv
+            if counter >= ((60 * @run_time) / @query_time) + 1 
+              puts "Thread for #{@name} exiting"
+              top.close_top
+              Thread.exit
+            end
+            counter += 1
+          rescue StandardError => e
+            PP.pp e
           end
-          counter += 1
         end
       }
       @threads << t
@@ -360,7 +377,8 @@ end
 storm_yaml = YAML.load_file(ENV['HOME'] + '/.storm/storm.yaml')
 $nimbus_host_ip =  storm_yaml['nimbus.host']
 cluster = Cluster.new($nimbus_host_ip)
-query_time =  ARGV[0].to_i
-run_time = ARGV[1].to_f
+query_time =  (ARGV[0].to_i unless ARGV[0].nil?) || 5 
+run_time = (ARGV[1].to_f unless ARGV[1].nil?) || 0.5 
+$output_dir = ARGV[2] || './runs'
 metrics = Metrics.new(cluster, query_time, run_time)
 metrics.run
