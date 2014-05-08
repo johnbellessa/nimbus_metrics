@@ -25,12 +25,10 @@ class Cluster
       protocol = Thrift::BinaryProtocol.new(@transport)
       @client = Nimbus::Client.new(protocol)
       @transport.open
-      #PP.pp @client.getClusterInfo.topologies[0].methods
     end
   end
 
   def load_topologies
-    puts "Search for Topologies"
     all_topology_ids = Set.new
     all_topology_names = {} 
     topologies = @client.getClusterInfo.topologies
@@ -89,6 +87,8 @@ class Topology
     @csv_files = {
       'capacity' =>  {}, 
       'emit_rate' => {}, 
+      'process_latency' => {}, 
+      'execute_latency' => {}, 
     }
     mkdir_output = `mkdir -p #{$output_dir}/#{@name}/results`
     puts mkdir_output if mkdir_output.length > 0
@@ -112,8 +112,6 @@ class Topology
     @bolts = {}
     @spouts = {}
     @executors.each do |e|
-      #PP.pp e.methods
-      #PP.pp "Port: #{e.executor_info.task_end}"
       if e.stats
         if e.stats.specific != nil
           if e.stats.specific.bolt?
@@ -207,6 +205,33 @@ class Topology
     end
   end
 
+  def calculate_latency
+    @process_latency = {} 
+    @execute_latency = {}
+    @bolts.each do |component, executors| 
+      avg_process = 0
+      process_count = 0
+      avg_execute = 0
+      exec_count = 0
+      executors.each do |summary|
+        latency = summary.stats.specific.bolt.execute_ms_avg['600'].values[0]
+        process_ms_avg = summary.stats.specific.bolt.process_ms_avg['600'].values[0]
+        execute_ms_avg = summary.stats.specific.bolt.execute_ms_avg['600'].values[0]
+        unless process_ms_avg.nil? || process_ms_avg.to_f < 0.01
+          avg_process += process_ms_avg         
+          process_count += 1
+        end
+        unless execute_ms_avg.nil? || execute_ms_avg.to_f < 0.01 
+          avg_execute += execute_ms_avg 
+          exec_count += 1
+        end
+      end
+      avg_process /= process_count unless process_count == 0
+      avg_execute /= exec_count unless exec_count == 0
+      @process_latency[component] = avg_process
+      @execute_latency[component] = avg_execute
+    end
+  end
 
   def computed_total_acked
     @total_acked = {}
@@ -277,6 +302,10 @@ class Topology
     unless @rates.nil?
       csv_wrapper('emit_rate', @rates.keys, @rates)
     end
+
+    calculate_latency
+    csv_wrapper('process_latency', @process_latency.keys, @process_latency)
+    csv_wrapper('execute_latency', @execute_latency.keys, @execute_latency)
   end
 
   def csv_wrapper(metric, keys, values)
@@ -365,6 +394,7 @@ class Metrics
             counter += 1
           rescue StandardError => e
             PP.pp e
+            Thread.exit
           end
         end
       }
