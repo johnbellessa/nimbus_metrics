@@ -217,11 +217,11 @@ class Topology
         latency = summary.stats.specific.bolt.execute_ms_avg['600'].values[0]
         process_ms_avg = summary.stats.specific.bolt.process_ms_avg['600'].values[0]
         execute_ms_avg = summary.stats.specific.bolt.execute_ms_avg['600'].values[0]
-        unless process_ms_avg.nil? || process_ms_avg.to_f < 0.01
+        unless process_ms_avg.nil?# || process_ms_avg.to_f < 0.000001
           avg_process += process_ms_avg         
           process_count += 1
         end
-        unless execute_ms_avg.nil? || execute_ms_avg.to_f < 0.01 
+        unless execute_ms_avg.nil?# || execute_ms_avg.to_f < 0.000001 
           avg_execute += execute_ms_avg 
           exec_count += 1
         end
@@ -300,12 +300,12 @@ class Topology
 
     # emit rate to csv
     unless @rates.nil?
-      csv_wrapper('emit_rate', @rates.keys, @rates)
+      csv_wrapper('emit_rate', @rates.keys.sort_by{ |key| key }, @rates)
     end
 
     calculate_latency
-    csv_wrapper('process_latency', @process_latency.keys, @process_latency)
-    csv_wrapper('execute_latency', @execute_latency.keys, @execute_latency)
+    csv_wrapper('process_latency', @process_latency.keys.sort_by{ |key| key }, @process_latency)
+    csv_wrapper('execute_latency', @execute_latency.keys.sort_by{ |key| key }, @execute_latency)
   end
 
   def csv_wrapper(metric, keys, values)
