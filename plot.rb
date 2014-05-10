@@ -3,7 +3,7 @@
 require 'csv'
 
 top_dir = ARGV[0] || './runs'
-topologies = Dir.entries(top_dir).select{ |file| !(file == '.' || file == '..')}
+topologies = Dir.entries(top_dir).select{ |file| !(file == '.' || file == '..' || file == '.DS_Store')}
 puts topologies
 topologies.each do |top|
   file_names = Dir.entries(top_dir + '/' + top + '/results').select { |file| file.include? '.csv' }
@@ -17,7 +17,7 @@ topologies.each do |top|
     file_name.slice!('.csv')
     parts = file_name.split('__')
     metric = parts[1] 
-    name = './results/' + file_name
+    name = top_dir + "/" + top + '/results/' + file_name
     puts "gnuplot -e \"columns=#{columns - 1} ; metric='#{metric}' ; name= '#{name}'\" plotter.p"
     output = `gnuplot -e "columns=#{columns - 1} ; metric='#{metric}' ; name= '#{name}'" plotter.p`
     puts output
