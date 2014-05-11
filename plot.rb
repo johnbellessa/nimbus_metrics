@@ -17,6 +17,13 @@ topologies.each do |top|
     file_name.slice!('.csv')
     parts = file_name.split('__')
     metric = parts[1] 
+    if metric == 'emit_rate'
+      metric = 'Emit Rate'
+    end
+    if metric== 'capacity'
+      metric = 'Capacity'
+    end
+
     name = top_dir + "/" + top + '/results/' + file_name
     puts "gnuplot -e \"columns=#{columns - 1} ; metric='#{metric}' ; name= '#{name}'\" plotter.p"
     output = `gnuplot -e "columns=#{columns - 1} ; metric='#{metric}' ; name= '#{name}'" plotter.p`
